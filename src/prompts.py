@@ -68,12 +68,19 @@ Final Answer: câu trả lời hoàn chỉnh bằng tiếng Việt.
 
 QUY TẮC NGHIỆP VỤ:
 
+- Khi người dùng nói trống không như 'phòng đó', 'căn thứ hai', 'đặt lịch 9h sáng',
+  hãy tra trong phần LỊCH SỬ HỘI THOẠI để biết họ đang nói tới mã tin nào.
+  Nếu lịch sử có nhiều phòng và không rõ họ chọn phòng nào, PHẢI hỏi lại cho chắc
+  thay vì đoán bừa rồi đặt nhầm.
 - TỰ QUY ĐỔI ngày tương đối sang YYYY-MM-DD dựa vào phần NGỮ CẢNH THỜI GIAN ở trên.
   'ngày mai', 'cuối tuần này', 'thứ bảy tới' đều tự tính được — ĐỪNG hỏi lại người dùng
   ngày cụ thể khi bạn hoàn toàn tính ra được.
-- Khi người dùng đã yêu cầu đặt lịch nhưng chưa chỉ rõ phòng nào, hãy tự chọn một phòng
-  phù hợp nhất trong kết quả tìm được (ưu tiên tin mới đăng, giá hợp lý), nói rõ lý do
-  chọn, rồi tiếp tục đặt lịch. Đừng dừng lại bắt người dùng chọn thủ công.
+- Khi người dùng yêu cầu đặt lịch mà chưa chỉ rõ phòng nào, xử lý theo ĐÚNG hai trường hợp:
+  (a) Bạn CHƯA từng trình bày danh sách phòng nào cho họ (ví dụ họ gộp cả tìm và đặt vào
+      một câu ngay từ đầu): hãy tự chọn phòng phù hợp nhất, nói rõ lý do chọn, rồi đặt.
+  (b) Bạn ĐÃ trình bày danh sách phòng ở lượt trước (xem LỊCH SỬ HỘI THOẠI): TUYỆT ĐỐI
+      KHÔNG tự chọn thay họ. Phải hỏi lại họ muốn phòng nào rồi mới đặt. Đặt nhầm phòng
+      là lỗi nghiêm trọng vì đây là hành động ghi, tạo lịch hẹn thật.
 - Chỉ nêu thông tin phòng có trong Observation. Không bịa mã tin, giá hay địa chỉ.
 - Nếu Observation báo không tìm thấy tin nào, hãy nói thật với người dùng và gợi ý
   nới điều kiện. Không được bịa ra một phòng không có trong dữ liệu.
@@ -128,6 +135,41 @@ MAX_ITERATIONS_FALLBACK = (
 )
 
 
+# ============================================================================
+# 💭 BỘ NHỚ HỘI THOẠI (để Agent hiểu được câu hỏi nối tiếp)
+# ============================================================================
+
+# Giữ tối đa 10 lượt gần nhất — đủ để hiểu ngữ cảnh mà không phình transcript
+MAX_HISTORY_TURNS = 10
+
+# Cắt bớt câu trả lời dài khi đưa vào lịch sử; mã tin thường nằm ở đầu nên không mất
+MAX_HISTORY_ANSWER_CHARS = 700
+
+
+def format_history(history: list) -> str:
+    """
+    Dựng khối LỊCH SỬ HỘI THOẠI để chèn vào prompt.
+
+    history là danh sách cặp (câu hỏi, câu trả lời) theo thứ tự thời gian.
+    Trả chuỗi rỗng nếu chưa có lượt nào, để prompt của lượt đầu tiên sạch sẽ.
+    """
+    if not history:
+        return ""
+
+    lines = [
+        "LỊCH SỬ HỘI THOẠI (dùng để hiểu các câu hỏi nối tiếp như 'phòng đó', 'đặt lịch 9h'):"
+    ]
+    for index, (question, answer) in enumerate(history[-MAX_HISTORY_TURNS:], start=1):
+        answer = (answer or "").strip()
+        if len(answer) > MAX_HISTORY_ANSWER_CHARS:
+            answer = answer[:MAX_HISTORY_ANSWER_CHARS] + " [...]"
+        lines.append(f"[Lượt {index}]")
+        lines.append(f"Người dùng: {question.strip()}")
+        lines.append(f"Trợ lý: {answer}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 WEEKDAY_VI = [
     "Thứ Hai",
     "Thứ Ba",
@@ -153,6 +195,29 @@ def build_react_system_prompt(today: date | None = None) -> str:
         weekday=WEEKDAY_VI[today.weekday()],
         tomorrow=(today + timedelta(days=1)).isoformat(),
     )
+
+
+# Ý định đặt lịch còn hiệu lực trong bao nhiêu lượt gần nhất.
+# Người dùng nói 'đặt lịch giúp tôi' ở lượt 2 rồi lượt 3 chỉ nói 'căn rẻ nhất ấy' —
+# ý định vẫn còn, không thể bắt họ lặp lại từ khoá mỗi lượt.
+# Không để vô hạn: hội thoại đi xa rồi thì ý định cũ coi như hết hiệu lực.
+BOOKING_INTENT_LOOKBACK_TURNS = 3
+
+
+def has_booking_intent_in_context(user_query: str, history: list = None) -> bool:
+    """
+    Kiểm tra ý định đặt lịch trên cả câu hiện tại lẫn vài lượt hội thoại gần nhất.
+
+    Cần thiết vì trong hội thoại nhiều lượt, ý định đặt lịch nêu một lần rồi các lượt
+    sau chỉ làm rõ thêm (chọn phòng nào, giờ nào). Nếu chỉ soi câu hiện tại thì phanh
+    ghi sẽ chặn nhầm và người dùng không bao giờ đặt xong được.
+    """
+    if has_booking_intent(user_query):
+        return True
+    if not history:
+        return False
+    recent = history[-BOOKING_INTENT_LOOKBACK_TURNS:]
+    return any(has_booking_intent(question) for question, _ in recent)
 
 
 def has_booking_intent(user_query: str) -> bool:
