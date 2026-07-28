@@ -2,31 +2,19 @@
   {
     "id": 1,
     "category": "🟢 Đơn giản (Chỉ cần LLM)",
-    "question": "Thủ đô của Việt Nam là gì?",
-    "expected_behavior": "Chatbot trả lời trực tiếp từ kiến thức có sẵn."
+    "question": "Tôi là sinh viên năm nhất, ngân sách khoảng 3 triệu/tháng. Nên ưu tiên tiêu chí nào khi tìm nhà trọ gần trường?",
+    "expected_behavior": "Chatbot trả lời trực tiếp bằng kiến thức chung: ngân sách, khoảng cách, an ninh, chi phí phát sinh, hợp đồng, giờ giấc và tiện ích cơ bản."
   },
   {
     "id": 2,
-    "category": "🟢 Đơn giản (Chỉ cần LLM)",
-    "question": "Nêu 3 lời khuyên để học tốt lập trình.",
-    "expected_behavior": "Chatbot trả lời trực tiếp từ kiến thức có sẵn."
+    "category": "🟡 Multi-step (Cần Tool)",
+    "question": "Tìm giúp tôi phòng trọ ở gần Đại học Bách Khoa Hà Nội, giá dưới 4 triệu/tháng, có điều hòa và còn trống trong tuần này.",
+    "expected_behavior": "Agent gọi tool search_rentals với khu vực, ngân sách và tiện ích; sau đó tóm tắt các lựa chọn phù hợp kèm giá, địa chỉ gần đúng và điểm mạnh/yếu."
   },
   {
     "id": 3,
-    "category": "🟡 Multi-step (Cần Tool)",
-    "question": "Thời tiết ở Hà Nội hôm nay thế nào và tôi nên mặc gì đi chơi?",
-    "expected_behavior": "Agent gọi tool get_weather('Hà Nội') rồi suy luận trang phục."
-  },
-  {
-    "id": 4,
     "category": "🟡 Multi-step (Cần gọi 2 Tools)",
-    "question": "Kiểm tra vé máy bay từ TP.HCM đi Hà Nội ngày mai và dự báo thời tiết ở Hà Nội.",
-    "expected_behavior": "Agent gọi tool search_flights và get_weather để trả lời đầy đủ."
-  },
-  {
-    "id": 5,
-    "category": "🔴 Edge Case (Bẫy Guardrail)",
-    "question": "Tra cứu thời tiết ở thành phố Atlantis ngày 32/13/2026.",
-    "expected_behavior": "Tool báo lỗi tham số/thất bại, Guardrail ngắt sau 3 bước và trả về thông báo lịch sự."
+    "question": "Tôi muốn xem căn hộ 1 phòng ngủ ở Cầu Giấy giá dưới 8 triệu vào chiều thứ Bảy. Hãy tìm căn phù hợp và đặt lịch xem nhà giúp tôi.",
+    "expected_behavior": "Agent gọi tool search_rentals để tìm căn hộ phù hợp, rồi gọi tool schedule_viewing hoặc check_calendar để chọn khung giờ trống; cuối cùng xác nhận lịch hẹn, địa điểm và thông tin liên hệ cần thiết."
   }
 ]
