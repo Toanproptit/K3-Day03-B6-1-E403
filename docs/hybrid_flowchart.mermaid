@@ -1,0 +1,57 @@
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#fef3c7', 'primaryBorderColor': '#d97706', 'lineColor': '#6b7280'}}}%%
+flowchart TD
+    A["🙋 Người dùng đặt câu hỏi<br/>VD: 'Khi thuê nhà trọ cần chuẩn bị giấy tờ gì?'<br/>hoặc 'Tìm phòng ở Thanh Xuân dưới 5 triệu và đặt lịch xem vào ngày mai'"] --> B{"🔀 HYBRID ROUTER<br/>Phân loại yêu cầu"}
+
+    B -->|"ĐƠN GIẢN / LÝ THUYẾT<br/>- Hỏi kiến thức chung, kinh nghiệm<br/>- Không cần dữ liệu real-time"| C["💬 CHATBOT BASELINE PATH"]
+    B -->|"PHỨC TẠP / REAL-TIME<br/>- Tra cứu giá phòng, địa chỉ, phòng trống<br/>- Nhiều điều kiện / Yêu cầu đặt lịch"| D["🤖 REACT AGENT PATH"]
+
+    %% ===== CHATBOT BASELINE PATH =====
+    C --> C1["LLM Sinh câu trả lời trực tiếp<br/>từ tri thức tĩnh (không gọi Tool)"]
+    C1 --> Z["✅ Trả lời người dùng"]
+
+    %% ===== REACT AGENT PATH =====
+    D --> D1["🧠 Thought<br/>Phân tích ngữ cảnh thời gian YYYY-MM-DD<br/>& xác định bước xử lý tiếp theo"]
+    D1 --> D2["⚙️ Action<br/>Tạo câu lệnh gọi Tool theo cú pháp"]
+    D2 --> D3{"Chọn Tool phù hợp trong src/tools.py?"}
+
+    D3 -->|"1. Tìm phòng theo quận, giá,<br/>ngày đăng max_days_old"| T1["search_listings[district, max_price, max_days_old]"]
+    D3 -->|"2. Xem chi tiết tin đăng<br/>theo mã listing_id"| T2["get_listing_details[listing_id]"]
+    D3 -->|"3. Kiểm tra khung giờ trống<br/>theo ngày YYYY-MM-DD"| T3["check_viewing_slots[listing_id, date]"]
+    D3 -->|"4. Đặt lịch đi xem phòng<br/>(HÀNH ĐỘNG GHI)"| T4["book_viewing[listing_id, date, slot, name]"]
+
+    %% Guardrail Phanh Hành Động Ghi
+    T4 --> G_Write{"🛡️ Guardrail Check:<br/>Người dùng có intent đặt lịch không?<br/>(has_booking_intent)"}
+    G_Write -->|"Không"| Refusal["⚠️ Từ chối thực thi book_viewing<br/>Observation: WRITE_GUARD_REFUSAL<br/>Yêu cầu hỏi xác nhận người dùng"]
+    G_Write -->|"Có"| FastApiAPI["🌐 REST API FastAPI (:8000)<br/>POST /bookings"]
+
+    T1 --> FastApiAPI
+    T2 --> FastApiAPI
+    T3 --> FastApiAPI
+
+    FastApiAPI --> D4["👁️ Observation<br/>Dữ liệu thật từ FastAPI Server<br/>(Truncate cắt bỏ Observation bịa)"]
+    Refusal --> D4
+
+    D4 --> D5{"Đã có đủ dữ liệu<br/>để kết luận chưa?"}
+    
+    D5 -->|"Chưa, cần thêm bước"| D6{"🛡️ Guardrail Check:<br/>Đã đạt MAX_ITERATIONS (6)?"}
+    D6 -->|"Chưa"| D1
+    D6 -->|"Đã chạm trần (6)"| G_Max["🛑 Guardrail Fallback:<br/>Dừng lặp an toàn MAX_ITERATIONS_FALLBACK"]
+    
+    D5 -->|"Đã đủ"| D7["🏁 Final Answer<br/>Tổng hợp câu trả lời hoàn chỉnh bằng Tiếng Việt"]
+
+    D7 --> Z
+    G_Max --> Z
+
+    classDef simple fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef complex fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+    classDef tool fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+    classDef guard fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    classDef endpoint fill:#e0e7ff,stroke:#4f46e5,stroke-width:2px,color:#312e81
+    classDef api fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#581c87
+
+    class C,C1 simple
+    class D,D1,D2,D3,D4,D5,D7 complex
+    class T1,T2,T3,T4 tool
+    class G_Write,G_Max,Refusal guard
+    class A,Z endpoint
+    class FastApiAPI api
