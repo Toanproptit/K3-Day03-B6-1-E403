@@ -5,9 +5,13 @@ Chạy:
     Terminal 1:  uvicorn src.rental_api.server:app --port 8000
     Terminal 2:  python src/chat.py
 
+Agent NHỚ được các lượt trước trong cùng phiên chat, nên hỏi nối tiếp kiểu
+"đặt lịch phòng đó lúc 9h sáng" là hiểu được.
+
 Lệnh trong lúc chat:
     /gon     bật/tắt chế độ gọn (ẩn Thought - Action - Observation, chỉ xem câu trả lời)
     /bot     hỏi Chatbot baseline thay vì Agent, để so sánh hai bên
+    /quen    xoá bộ nhớ hội thoại, bắt đầu lại từ đầu
     /thoat   thoát
 """
 
@@ -37,7 +41,9 @@ Ví dụ câu hỏi:
   • Phòng nào ở Thanh Xuân mới đăng trong 3 ngày qua?
   • Đặt lịch xem phòng pr710331 vào ngày mai, tên tôi là Toàn
 
-Gõ /gon để ẩn bớt log, /bot để hỏi Chatbot thường, /thoat để thoát.
+Hỏi nối tiếp được, ví dụ hỏi tiếp "đặt lịch phòng đó lúc 9h sáng mai".
+
+Gõ /gon để ẩn log, /bot để hỏi Chatbot thường, /quen để xoá bộ nhớ, /thoat để thoát.
 """
 
 
@@ -55,6 +61,7 @@ def main() -> int:
     print(f"🌐 API: OK ({info})    🔌 LLM: {provider.__class__.__name__} / {model_name}\n")
 
     concise = False
+    history = []  # danh sách cặp (câu hỏi, câu trả lời) của phiên chat hiện tại
 
     while True:
         try:
@@ -75,6 +82,11 @@ def main() -> int:
             print(f"⚙️  Chế độ gọn: {'BẬT (chỉ hiện câu trả lời)' if concise else 'TẮT (hiện đủ trace)'}")
             continue
 
+        if query in ("/quen", "/reset"):
+            history.clear()
+            print("🧹 Đã xoá bộ nhớ hội thoại.")
+            continue
+
         use_baseline = query.startswith("/bot")
         if use_baseline:
             query = query[len("/bot"):].strip()
@@ -89,10 +101,13 @@ def main() -> int:
                 # Nuốt toàn bộ log trung gian, chỉ giữ lại kết quả cuối
                 buffer = io.StringIO()
                 with redirect_stdout(buffer):
-                    answer = run(query, provider)
+                    answer = run(query, provider, history=history)
                 print(f"\n🤖 {answer}")
             else:
-                run(query, provider)
+                answer = run(query, provider, history=history)
+
+            # Ghi lại lượt này để lượt sau hiểu được 'phòng đó', 'đặt lịch 9h'
+            history.append((query, answer))
         except KeyboardInterrupt:
             print("\n⏹️  Đã dừng câu hỏi này.")
         except Exception as e:

@@ -37,7 +37,8 @@ from prompts import (
     MAX_ITERATIONS_FALLBACK,
     WRITE_GUARD_REFUSAL,
     build_react_system_prompt,
-    has_booking_intent,
+    format_history,
+    has_booking_intent_in_context,
 )
 from providers import get_llm_provider
 
@@ -101,10 +102,11 @@ def load_test_cases():
 # ============================================================================
 
 
-def run_baseline_chatbot(user_query: str, provider) -> str:
+def run_baseline_chatbot(user_query: str, provider, history: list = None) -> str:
     """Chatbot gốc: chỉ có LLM, không có công cụ nào."""
     print(f"\n💬 [CHATBOT BASELINE] Câu hỏi: {user_query}")
-    response = provider.generate(user_query, system_prompt=CHATBOT_BASELINE_PROMPT)
+    prompt = f"{format_history(history)}Câu hỏi: {user_query}" if history else user_query
+    response = provider.generate(prompt, system_prompt=CHATBOT_BASELINE_PROMPT)
     print(f"🤖 Chatbot trả lời:\n{response}")
     return response
 
@@ -175,7 +177,7 @@ def parse_action(text: str):
 # ============================================================================
 
 
-def execute_tool(tool_name: str, args: list, user_query: str) -> str:
+def execute_tool(tool_name: str, args: list, user_query: str, history: list = None) -> str:
     """
     Chạy tool và trả về Observation.
 
@@ -187,8 +189,9 @@ def execute_tool(tool_name: str, args: list, user_query: str) -> str:
         available = ", ".join(AVAILABLE_TOOLS)
         return f"LỖI: không có công cụ tên '{tool_name}'. Các công cụ hợp lệ: {available}."
 
-    # 🛡️ PHANH HÀNH ĐỘNG GHI: không cho đặt lịch nếu người dùng chưa hề yêu cầu
-    if tool_name in WRITE_TOOLS and not has_booking_intent(user_query):
+    # 🛡️ PHANH HÀNH ĐỘNG GHI: không cho đặt lịch nếu người dùng chưa hề yêu cầu.
+    # Xét cả lịch sử vì ý định nêu ở lượt trước vẫn còn hiệu lực ở lượt làm rõ tiếp theo.
+    if tool_name in WRITE_TOOLS and not has_booking_intent_in_context(user_query, history):
         return WRITE_GUARD_REFUSAL
 
     try:
@@ -211,15 +214,22 @@ def execute_tool(tool_name: str, args: list, user_query: str) -> str:
 # ============================================================================
 
 
-def run_react_agent(user_query: str, provider, verbose: bool = True) -> str:
+def run_react_agent(user_query: str, provider, verbose: bool = True, history: list = None) -> str:
     """
     Vòng lặp ReAct thật: Thought -> Action -> Observation, lặp tới khi có Final Answer
     hoặc chạm phanh MAX_ITERATIONS.
+
+    history: danh sách cặp (câu hỏi, câu trả lời) của các lượt trước, để Agent hiểu
+    được câu hỏi nối tiếp kiểu 'đặt lịch phòng đó lúc 9h'. Bỏ trống nếu chạy một lượt.
     """
     print(f"\n🤖 [REACT AGENT] Câu hỏi: {user_query}")
 
     # Prompt được điền ngày hôm nay để Agent tự quy đổi được "ngày mai" sang YYYY-MM-DD
-    transcript = f"{build_react_system_prompt()}\nCâu hỏi: {user_query}\n"
+    transcript = (
+        f"{build_react_system_prompt()}\n"
+        f"{format_history(history)}"
+        f"Câu hỏi: {user_query}\n"
+    )
 
     for step in range(1, MAX_ITERATIONS + 1):
         print(f"\n--- 🔄 Vòng lặp ReAct (Step {step}/{MAX_ITERATIONS}) ---")
@@ -252,7 +262,7 @@ def run_react_agent(user_query: str, provider, verbose: bool = True) -> str:
             )
         else:
             tool_name, args = parsed
-            observation = execute_tool(tool_name, args, user_query)
+            observation = execute_tool(tool_name, args, user_query, history)
 
         print(f"👁️ Observation: {observation}")
         transcript += f"{output}\nObservation: {observation}\n"
